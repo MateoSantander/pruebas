@@ -1,0 +1,87 @@
+# Primero el servicio
+apiVersion: v1
+kind: Service
+metadata:
+  name: logs
+  labels:
+    app: logservice
+spec:
+  ports:
+    - port: 82
+    - targetPort: 80
+  selector:
+    app: logservice
+    tier: backendService
+---
+# Ahora el Claim para el volumen persistente
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: logsClaim
+  labels:
+    app: logservice
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 3Gi
+---
+# Y el despliegue
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: logs
+  labels:
+    app: logservice
+spec:
+  selector:
+    matchLabels:
+      app: logservice
+      tier: backendService
+  replicas: 3
+  template:
+    metadata:
+      labels:
+        app: logservice
+        tier: backendService
+    spec:
+      containers:
+      - image: stoplight/prism:4
+        name: logs_mock
+        ports:
+        - containerPort: 4010
+          name: logs_mock
+        volumeMounts:
+        - name: openapiLogStorage
+          mountPath: /aos
+        command: ["mock"]
+        args: ["--cors", "-h", "0.0.0.0", "/aos/openapi.yaml"]
+      - image: caddy:latest
+        name: logs_proxy
+        ports:
+        - containerPort: 80
+          name: logs_proxy
+        volumeMounts:
+        - name: caddyLogStorage
+          mountPath: etc/caddy/Caddyfile
+      volumes:
+      - name: openapiLogStorage
+        persistentVolumeClaim:
+          claimName: logsClaim
+      - name: caddyLogStorage
+        persistentVolumeClaim:
+          claimName: caddyLogClaim
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: caddyLogClaim
+  labels:
+    app: logservice
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 3Gi
